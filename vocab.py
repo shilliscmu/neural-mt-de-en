@@ -11,7 +11,7 @@ Options:
     --train-src=<file>         File of training source sentences
     --train-tgt=<file>         File of training target sentences
     --size=<int>               vocab size [default: 50000]
-    --freq-cutoff=<int>        frequency cutoff [default: 2]
+    --freq-cutoff=<int>        frequency cutoff [default: 10]
 """
 
 from collections import Counter
@@ -19,7 +19,7 @@ from itertools import chain
 from docopt import docopt
 import pickle
 
-from code.utils import read_corpus
+from utils import read_corpus
 
 
 class VocabEntry(object):
@@ -66,7 +66,7 @@ class VocabEntry(object):
             return [self[w] for w in sents]
 
     @staticmethod
-    def from_corpus(corpus, size, freq_cutoff=2):
+    def from_corpus(corpus, size, freq_cutoff=1):
         vocab_entry = VocabEntry()
 
         word_freq = Counter(chain(*corpus))

@@ -18,8 +18,8 @@ Hypothesis = namedtuple('Hypothesis', ['value', 'score', 'logits'])
 
 def read_corpus(file_path, source):
     data = []
-    for line in open(file_path):
-        sent = line.strip().split(' ')
+    for line in open(file_path, encoding="utf8"):
+        sent = list(line.strip())
         # only append <s> and </s> to the target sentence
         if source == 'tgt':
             sent = ['<s>'] + sent + ['</s>']
