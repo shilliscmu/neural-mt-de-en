@@ -67,6 +67,9 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     if references[0][0] == '<s>':
         references = [ref[1:-1] for ref in references]
 
+    # for character model
+    references = [''.join(ref) for ref in references]
+
     bleu_score = corpus_bleu([[ref] for ref in references],
                              [hyp.value for hyp in hypotheses])
 
@@ -111,23 +114,24 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
             cum_loss += loss.item()
             cum_ppl += math.exp(loss.item() / cum_tgt_words * batch_size)
 
-            hyps.append(Hypothesis(output.max(2)[1].squeeze(0), 0, []))
+            output = output.cpu().detach()
+            output = [np.argmax(output[batch_num, :length].numpy(), axis=1) for batch_num, length in
+                      enumerate(tgt_sent_lengths)]
+            output = [[vocab.tgt.get_word(char.item()) for char in o] for o in output]
+            output = ''.join([item for sublist in output for item in sublist])
+
+            hyps.append(Hypothesis(output, 0, []))
 
             if print_output:
-                output = output.cpu().detach()
-                output = [np.argmax(output[batch_num, :length].numpy(), axis=1) for batch_num, length in
-                          enumerate(tgt_sent_lengths)]
-                output = [[vocab.tgt.get_word(char.item()) for char in o] for o in output]
-                output = ' '.join([item for sublist in output for item in sublist])
                 tgt_sents = tgt_sents.cpu().detach()
                 tgt_sents = [tgt_sents[batch_num, :length].numpy() for batch_num, length in enumerate(tgt_sent_lengths)]
                 tgt_sents = [[vocab.tgt.get_word(char.item()) for char in t] for t in tgt_sents]
-                tgt_sents = ' '.join([item for sublist in tgt_sents for item in sublist])
-
+                tgt_sents = ''.join([item for sublist in tgt_sents for item in sublist])
                 with open(dev_output_path, 'w') as f:
                         f.write('transcripts:\n' + tgt_sents + '\n')
                         f.write('outputs:\n' + output + '\n\n')
 
+            if len(hyps) == 10:
                 print_output = False
 
         bleu = compute_corpus_level_bleu_score(dev_tgts, hyps)
