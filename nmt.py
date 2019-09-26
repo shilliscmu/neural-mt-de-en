@@ -34,7 +34,7 @@ Options:
     --valid-every=<int>                     perform validation after how many epochs [default: 1]
     --dropout=<float>                       dropout [default: 0.2]
     --teacher-forcing=<float>               teacher forcing ratio [default: 1.0]
-    --max-decoding-time-step=<int>          maximum number of decoding time steps [default: 50]
+    --max-decoding-time-step=<int>          maximum number of decoding time steps [default: 100]
 """
 import os
 import pickle
@@ -97,10 +97,10 @@ def train(args):
     optimizer = torch.optim.Adam(net.parameters(), lr, weight_decay=float(weight_decay))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=int(args['--patience']), threshold=0.01, verbose=True)
 
-    print('begin Maximum Likelihood training')
+    print('Begin training at ' + time.strftime("%c", time.localtime()))
     epoch = 0
     while True:
-        if epoch > 0 and epoch % 5 == 0 and teacher_forcing > 0.1:
+        if epoch > 0 and epoch % 3 == 0 and teacher_forcing > 0.1:
             teacher_forcing -= 0.1
 
         train_iter = cum_loss = cum_perp = cumulative_tgt_words = report_tgt_words = 0
