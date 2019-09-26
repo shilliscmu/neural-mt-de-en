@@ -6,7 +6,7 @@ from torch.nn.utils import rnn
 from torch.nn.utils.rnn import pad_packed_sequence
 
 from dropout import WeightDrop, LockedDropout
-from code.utils import Hypothesis
+from utils import Hypothesis
 
 
 class Encoder(nn.Module):

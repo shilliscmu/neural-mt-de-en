@@ -36,18 +36,18 @@ Options:
     --teacher-forcing=<float>               teacher forcing ratio [default: 1.0]
     --max-decoding-time-step=<int>          maximum number of decoding time steps [default: 50]
 """
-import math
 import os
 import pickle
 import sys
 import time
 
+import math
 import torch
 from docopt import docopt
 from torch import nn
 
 from model import Seq2Seq
-from code.utils import init_weights, read_corpus, batch_iter, evaluate_ppl, beam_search, compute_corpus_level_bleu_score, \
+from utils import init_weights, read_corpus, batch_iter, evaluate_ppl, beam_search, compute_corpus_level_bleu_score, \
     plot_grad_flow, plot_attention
 
 
