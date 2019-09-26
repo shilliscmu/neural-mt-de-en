@@ -93,6 +93,8 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
         cum_tgt_words = 0.
 
         print_output = True
+        with open(dev_output_path, 'w') as f:
+            f.write('\n')
         batch_size = 1
 
         dev_tgts = [example[1] for example in dev_data]
@@ -112,7 +114,7 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
             tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting the leading `<s>`
             cum_tgt_words += tgt_word_num_to_predict
             cum_loss += loss.item()
-            cum_ppl += math.exp(loss.item() / cum_tgt_words * batch_size)
+            cum_ppl += math.exp(loss.item() * batch_size / cum_tgt_words)
 
             output = output.cpu().detach()
             output = [np.argmax(output[batch_num, :length].numpy(), axis=1) for batch_num, length in
@@ -127,7 +129,7 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
                 tgt_sents = [tgt_sents[batch_num, :length].numpy() for batch_num, length in enumerate(tgt_sent_lengths)]
                 tgt_sents = [[vocab.tgt.get_word(char.item()) for char in t] for t in tgt_sents]
                 tgt_sents = ''.join([item for sublist in tgt_sents for item in sublist])
-                with open(dev_output_path, 'w') as f:
+                with open(dev_output_path, 'a') as f:
                         f.write('transcripts:\n' + tgt_sents + '\n')
                         f.write('outputs:\n' + output + '\n\n')
 
