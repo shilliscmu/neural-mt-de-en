@@ -34,7 +34,7 @@ Options:
     --valid-every=<int>                     perform validation after how many epochs [default: 1]
     --dropout=<float>                       dropout [default: 0.2]
     --teacher-forcing=<float>               teacher forcing ratio [default: 1.0]
-    --max-decoding-time-step=<int>          maximum number of decoding time steps [default: 100]
+    --max-decoding-time-step=<int>          maximum number of decoding time steps [default: 150]
 """
 import os
 import pickle
@@ -98,9 +98,14 @@ def train(args):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=int(args['--patience']), threshold=0.01, verbose=True)
 
     print('Begin training at ' + time.strftime("%c", time.localtime()))
-    epoch = 0
+    if args['--load-from']:
+        params = args['--load-from'].split('/')[-1].split('_')
+        epoch = int(params[1])
+        teacher_forcing = float(params[-1])
+    else:
+        epoch = 0
     while True:
-        if epoch > 0 and epoch % 3 == 0 and teacher_forcing > 0.1:
+        if epoch >= 10 and epoch % log_every == 0 and teacher_forcing > 0.1:
             teacher_forcing -= 0.1
 
         train_iter = cum_loss = cum_perp = cumulative_tgt_words = report_tgt_words = 0
@@ -128,7 +133,7 @@ def train(args):
                 mask[batch_num, :length] = 1
             loss = (loss * torch.cat(tuple(mask), 0).type(torch.FloatTensor).to(device)).sum() / batch_size
             cum_loss += loss.item()
-            cum_perp += math.exp(loss.item() / cumulative_tgt_words * batch_size)
+            cum_perp += math.exp(loss.item() * batch_size / cumulative_tgt_words)
             loss.backward()
             if train_iter == 1:
                 plot_grad_flow(net.named_parameters(), gradient_path, epoch, train_iter)
@@ -165,7 +170,7 @@ def train(args):
 
             if not os.path.exists(model_save_path):
                 os.mkdir(model_save_path)
-            backup_file = model_save_path + "/epoch_{:}_trainLoss_{:.2f}_devPerp_{:.2f}_devBleu_{:.2f}".format(epoch, cum_loss, dev_ppl, dev_bleu)
+            backup_file = model_save_path + "/epoch_{:}_trainLoss_{:.2f}_devPerp_{:.2f}_devBleu_{:.2f}_TF_{}".format(epoch, cum_loss, dev_ppl, dev_bleu, teacher_forcing)
             torch.save(net.state_dict(), backup_file)
 
         epoch += 1
