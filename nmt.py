@@ -49,6 +49,7 @@ from torch import nn
 from model import Seq2Seq
 from utils import init_weights, read_corpus, batch_iter, evaluate_ppl, beam_search, compute_corpus_level_bleu_score, \
     plot_grad_flow, plot_attention
+from vocab import Vocab, VocabEntry
 
 
 def train(args):
