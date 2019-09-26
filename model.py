@@ -2,8 +2,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.nn.utils import rnn
-from torch.nn.utils.rnn import pad_packed_sequence
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from dropout import WeightDrop, LockedDropout
 from utils import Hypothesis
@@ -14,31 +13,55 @@ class Encoder(nn.Module):
     def __init__(self, in_dim, embed_size, base, p):
         super(Encoder, self).__init__()
         self.emb = nn.Embedding(in_dim, embed_size)
-        self.lstm = self.__make_layer__(embed_size, base)
+        self.lstm1 = nn.LSTM(embed_size, base, bidirectional=True, batch_first=True)
+        self.lstm2 = self.__make_layer__(base*4, base)
+        self.lstm3 = self.__make_layer__(base*4, base)
+        self.lstm4 = self.__make_layer__(base*4, base)
 
         self.fc1 = nn.Linear(base * 2, base * 2)
         self.fc2 = nn.Linear(base * 2, base * 2)
         self.act = nn.SELU(True)
 
-        self.locked_drop = LockedDropout(.05)
+        self.locked_drop = LockedDropout(0.1)
 
     def __make_layer__(self, in_dim, out_dim):
         lstm = nn.LSTM(input_size=in_dim, hidden_size=out_dim, bidirectional=True, batch_first=True)
         return WeightDrop(lstm, ['weight_hh_l0', 'weight_hh_l0_reverse'],
                           dropout=0.1, variational=True)
 
+    def _stride2(self, x):
+        x = x[:, :x.size(1)//2*2]
+        x = self.locked_drop(x)
+        x = x.reshape(x.size(0), x.size(1)//2, x.size(2)*2)
+        return x
+
     def forward(self, x, src_lengths):
         x = self.emb(x)
-        x = rnn.pack_padded_sequence(x, src_lengths, batch_first=True)
-        x, (hidden, _) = self.lstm(x)
+        x = pack_padded_sequence(x, src_lengths, batch_first=True)
+        x, _ = self.lstm(x)
+
         x, seq_len = pad_packed_sequence(x, batch_first=True)
-        x = self.locked_drop(x)
+        x = self._stride2(x)
+
+        x = pack_padded_sequence(x, seq_len//2, batch_first=True)
+        x, _ = self.lstm2(x)
+        x, _ = pad_packed_sequence(x, batch_first=True)
+        x = self._stride2(x)
+
+        x = pack_padded_sequence(x, seq_len//4, batch_first=True)
+        x, _ = self.lstm3(x)
+        x, _ = pad_packed_sequence(x, batch_first=True)
+        x = self._stride2(x)
+
+        x = pack_padded_sequence(x, seq_len//8, batch_first=True)
+        x, (hidden, _) = self.lstm4(x)
+        x, _ = pad_packed_sequence(x, batch_first=True)
 
         key = self.act(self.fc1(x))
         value = self.act(self.fc1(x))
         hidden = torch.cat([hidden[0, :, :], hidden[1, :, :]], dim=1)
 
-        return seq_len, key, value, hidden
+        return seq_len//8, key, value, hidden
 
 
 class Attention(nn.Module):
@@ -54,13 +77,13 @@ class Attention(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_size, out_dim, p):
+    def __init__(self, out_dim, lstm_dim, p):
         super(Decoder, self).__init__()
-        self.embed = nn.Embedding(out_dim, hidden_size)
-        self.lstm1 = nn.LSTMCell(hidden_size * 2, hidden_size)
-        self.lstm2 = nn.LSTMCell(hidden_size, hidden_size)
+        self.embed = nn.Embedding(out_dim, lstm_dim)
+        self.lstm1 = nn.LSTMCell(lstm_dim * 2, lstm_dim)
+        self.lstm2 = nn.LSTMCell(lstm_dim, lstm_dim)
         self.drop = nn.Dropout(p)
-        self.fc = nn.Linear(hidden_size, out_dim)
+        self.fc = nn.Linear(lstm_dim, out_dim)
         self.embed.weight = self.fc.weight
 
     def forward(self, x, context, hidden1, cell1, hidden2, cell2, first_step):
