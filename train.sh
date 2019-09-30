@@ -17,7 +17,7 @@ mkdir -p ${gradient_dir}
 mkdir -p ${attention_dir}
 echo save results to ${work_dir}
 
-python nmt.py \
+python -u nmt.py \
     train \
     --train-src ${train_src} \
     --train-tgt ${train_tgt} \
@@ -28,20 +28,11 @@ python nmt.py \
     --save-to ${work_dir}/model/ \
     --gradient-path ${gradient_dir} \
     --attention-path ${attention_dir} \
-    --batch-size 256 \
-    --hidden-size 256 \
+    --batch-size 512 \
+    --hidden-size 512 \
     --embed-size 256 \
-    --dropout 0.3 \
+    --dropout 0.1 \
     --dev-output ${work_dir}/dev_decode.txt \
-    --clip-grad 5.0
-
-python nmt.py \
-    decode \
-    --vocab ${vocab} \
-    --beam-size 5 \
-    --max-decoding-time-step 100 \
-    ${work_dir}/model/ \
-    ${test_src} \
-    ${work_dir}/decode.txt
-
-perl multi-bleu.perl ${test_tgt} < ${work_dir}/decode.txt
+    --valid-every 4 \
+    --load-from work_dir/1569608141/model/epoch_18_trainLoss_68.49_devPerp_7822.16_devBleu_0.09_TF_0.9 \
+    --clip-grad 5.0 2>${work_dir}/output.txt
