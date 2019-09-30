@@ -53,7 +53,7 @@ def batch_iter(data, vocab, batch_size, shuffle=False):
         yield padded_src_sents, src_lengths, padded_tgt_sents, tgt_lengths
 
 
-def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: List[Hypothesis]) -> float:
+def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: List[str]) -> float:
     """
     Given decoding results and reference sentences, compute corpus-level BLEU score
 
@@ -71,7 +71,7 @@ def compute_corpus_level_bleu_score(references: List[List[str]], hypotheses: Lis
     references = [''.join(ref) for ref in references]
 
     bleu_score = corpus_bleu([[ref] for ref in references],
-                             [hyp.value for hyp in hypotheses])
+                             hypotheses)
 
     return bleu_score
 
@@ -104,8 +104,8 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
             src_sents, tgt_sents = src_sents.to(device), tgt_sents.to(device)
 
             output = model(src_sents, src_sent_lengths, tgt_sents, TF=0)
-            output = output[:, :tgt_sents.shape[1]]
-            loss = criterion(torch.cat(tuple(output), 0).to(device), torch.cat(tuple(tgt_sents), 0).to(device))
+            loss_output = output[:, :tgt_sents.shape[1]]
+            loss = criterion(torch.cat(tuple(loss_output), 0).to(device), torch.cat(tuple(tgt_sents), 0).to(device))
             mask = torch.zeros_like(tgt_sents)
             for batch_num, length in enumerate(tgt_sent_lengths):
                 mask[batch_num, :length] = 1
@@ -117,12 +117,13 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
             cum_ppl += math.exp(loss.item() * batch_size / cum_tgt_words)
 
             output = output.cpu().detach()
-            output = [np.argmax(output[batch_num, :length].numpy(), axis=1) for batch_num, length in
+            output = [np.argmax(output[batch_num].numpy(), axis=1) for batch_num, length in
                       enumerate(tgt_sent_lengths)]
+            output = [o[:np.where(o == 2)[0][0]] if np.any(o == 2) else o for o in output]
             output = [[vocab.tgt.get_word(char.item()) for char in o] for o in output]
             output = ''.join([item for sublist in output for item in sublist])
 
-            hyps.append(Hypothesis(output, 0, []))
+            hyps.append(output)
 
             if print_output:
                 tgt_sents = tgt_sents.cpu().detach()
@@ -133,7 +134,7 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
                         f.write('transcripts:\n' + tgt_sents + '\n')
                         f.write('outputs:\n' + output + '\n\n')
 
-            if len(hyps) == 10:
+            if len(hyps) == 100:
                 print_output = False
 
         bleu = compute_corpus_level_bleu_score(dev_tgts, hyps)
@@ -196,11 +197,11 @@ def plot_grad_flow(named_parameters, gradient_path, epoch_num, batch_num):
 def beam_search(model, test_data_src, vocab, beam_size=None) -> List[List[Hypothesis]]:
     hypotheses = []
     src_sents = [torch.LongTensor(
-        [vocab.src.word2id[word] if word in vocab.src else vocab.src.word2id['<unk>'] for word in e]).cpu() for e in
+        [vocab.src.word2id[word] if word in vocab.src else vocab.src.word2id['<unk>'] for word in e]).to(model.device) for e in
                  test_data_src]
 
     for src_sent in tqdm(src_sents, desc='Decoding', file=sys.stdout):
-        example_hyps = model.beam_search(src_sent, torch.LongTensor([len(src_sent)]).cpu(), beam_size)
+        example_hyps = model.beam_search(src_sent.to(model.device), torch.LongTensor([len(src_sent)]).to(model.device), beam_size)
         hypotheses.append(example_hyps)
 
     return hypotheses
