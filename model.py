@@ -22,6 +22,7 @@ class Encoder(nn.Module):
         self.act = nn.SELU(True)
 
         self.locked_drop = LockedDropout(0.1)
+        self.drop = nn.Dropout(p)
 
     def __make_layer__(self, in_dim, out_dim):
         lstm = nn.LSTM(input_size=in_dim, hidden_size=out_dim, bidirectional=True, batch_first=True)
@@ -35,7 +36,7 @@ class Encoder(nn.Module):
         return x
 
     def forward(self, x, src_lengths):
-        x = self.emb(x)
+        x = self.drop(self.emb(x))
         x = pack_padded_sequence(x, src_lengths, batch_first=True)
         x, _ = self.lstm1(x)
 
@@ -56,8 +57,8 @@ class Encoder(nn.Module):
         # x, (hidden, _) = self.lstm4(x)
         # x, _ = pad_packed_sequence(x, batch_first=True)
 
-        key = self.act(self.fc1(x))
-        value = self.act(self.fc1(x))
+        key = self.drop(self.act(self.fc1(x)))
+        value = self.drop(self.act(self.fc2(x)))
         hidden = torch.cat([hidden[0, :, :], hidden[1, :, :]], dim=1)
 
         return seq_len//4, key, value, hidden
@@ -86,7 +87,7 @@ class Decoder(nn.Module):
         self.embed.weight = self.fc.weight
 
     def forward(self, x, context, hidden1, cell1, hidden2, cell2, first_step):
-        x = self.embed(x)
+        x = self.drop(self.embed(x))
         x = torch.cat([x, context], dim=1)
         if first_step:
             hidden1, cell1 = self.lstm1(x)
@@ -94,7 +95,7 @@ class Decoder(nn.Module):
         else:
             hidden1, cell1 = self.lstm1(x, (hidden1, cell1))
             hidden2, cell2 = self.lstm2(hidden1, (hidden2, cell2))
-        x = self.fc(self.drop(hidden2))
+        x = self.drop(self.fc(hidden2))
         return x, (hidden1, cell1, hidden2, cell2)
 
 
