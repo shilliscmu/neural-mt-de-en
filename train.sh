@@ -34,5 +34,5 @@ python -u nmt.py \
     --dropout 0.1 \
     --dev-output ${work_dir}/dev_decode.txt \
     --valid-every 4 \
-    --load-from work_dir/1569608141/model/epoch_18_trainLoss_68.49_devPerp_7822.16_devBleu_0.09_TF_0.9 \
+    --load-from work_dir/1569620668/model/epoch_22_trainLoss_69.65_TF_0.80 \
     --clip-grad 5.0 2>${work_dir}/output.txt
