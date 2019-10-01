@@ -134,9 +134,6 @@ def evaluate_ppl(model, criterion, vocab, dev_data: List[Any], dev_output_path, 
                         f.write('transcripts:\n' + tgt_sents + '\n')
                         f.write('outputs:\n' + output + '\n\n')
 
-            if len(hyps) == 100:
-                print_output = False
-
         bleu = compute_corpus_level_bleu_score(dev_tgts, hyps)
 
         return cum_ppl, bleu
