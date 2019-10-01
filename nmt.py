@@ -3,8 +3,7 @@ A very basic implementation of neural machine translation
 
 Usage:
     nmt.py train --train-src=<file> --train-tgt=<file> --dev-src=<file> --dev-tgt=<file> --vocab=<file> [options]
-    nmt.py decode [options] MODEL_PATH TEST_SOURCE_FILE OUTPUT_FILE
-    nmt.py decode [options] MODEL_PATH TEST_SOURCE_FILE TEST_TARGET_FILE OUTPUT_FILE
+    nmt.py decode
 
 Options:
     -h --help                               show this screen.
@@ -68,6 +67,8 @@ def train(args):
         net.apply(init_weights)
         print('Initialized model weights')
 
+    print("Number of traininable params: " + str(sum(p.numel() for p in net.parameters() if p.requires_grad)))
+
     net = net.to(device)
 
     args['--dev-output'] = args['--attention-path'] + '/dev_decode.txt'
@@ -100,13 +101,14 @@ def train(args):
     print('Begin training at ' + time.strftime("%c", time.localtime()))
     if args['--load-from']:
         params = args['--load-from'].split('/')[-1].split('_')
-        epoch = int(params[1])
+        epoch = int(params[1]) + 1
         teacher_forcing = float(params[-1])
     else:
         epoch = 0
     while True:
-        if epoch >= 10 and epoch % log_every == 0 and teacher_forcing > 0.1:
-            teacher_forcing -= 0.1
+        if epoch >= 10 and epoch % (valid_every + 1) == 0 and teacher_forcing > 0.1:
+            teacher_forcing -= 0.05
+            print('Teacher forcing is now set to ' + str(teacher_forcing))
 
         train_iter = cum_loss = cum_perp = cumulative_tgt_words = report_tgt_words = 0
         cumulative_examples = report_examples = 0
@@ -160,7 +162,7 @@ def train(args):
                                                                                  cum_loss / train_iter,
                                                                                  cum_perp / train_iter,
                                                                                  cumulative_examples))
-        if epoch % valid_every == 0:
+        if epoch > 0 and epoch % valid_every == 0:
             net.eval()
             print('begin validation ...', file=sys.stderr)
 
@@ -170,13 +172,15 @@ def train(args):
 
             if not os.path.exists(model_save_path):
                 os.mkdir(model_save_path)
-            backup_file = model_save_path + "/epoch_{:}_trainLoss_{:.2f}_devPerp_{:.2f}_devBleu_{:.2f}_TF_{}".format(epoch, cum_loss, dev_ppl, dev_bleu, teacher_forcing)
+            backup_file = model_save_path + "/epoch_{:}_trainLoss_{:.2f}_devPerp_{:.2f}_devBleu_{:.2f}_TF_{:.2f}".format(epoch, cum_loss / train_iter, dev_ppl, dev_bleu, teacher_forcing)
+            torch.save(net.state_dict(), backup_file)
+        else:
+            if not os.path.exists(model_save_path):
+                os.mkdir(model_save_path)
+            backup_file = model_save_path + "/epoch_{:}_trainLoss_{:.2f}_TF_{:.2f}".format(epoch, cum_loss / train_iter, teacher_forcing)
             torch.save(net.state_dict(), backup_file)
 
         epoch += 1
-        if epoch == int(args['--max-epoch']):
-            print('reached maximum number of epochs!', file=sys.stderr)
-            exit(0)
 
 
 def test(args):
@@ -185,28 +189,34 @@ def test(args):
     net = Seq2Seq(args['--embed-size'], args['--hidden-size'], len(vocab.src), len(vocab.tgt), args['--dropout'], device, args['--max-decoding-time-step'])
     print(f"load model from {args['MODEL_PATH']}", file=sys.stderr)
     if not args['--cuda']:
-        net.load_state_dict(torch.load(args['--load-from'], map_location='cpu'))
+        net.load_state_dict(torch.load(args['MODEL_PATH'], map_location='cpu'))
     else:
-        net.load_state_dict(torch.load(args['--load-from']))
+        net.load_state_dict(torch.load(args['MODEL_PATH']))
     net = net.to(device)
     net.eval()
 
-    test_data_src = read_corpus(args['TEST_SOURCE_FILE'], source='src')
-    if args['TEST_TARGET_FILE']:
-        test_data_tgt = read_corpus(args['TEST_TARGET_FILE'], source='tgt')
+    with torch.set_grad_enabled(False):
 
-    hypotheses = beam_search(net, test_data_src, vocab)
+        test_data_src = read_corpus(args['TEST_SOURCE_FILE'], source='src')
 
-    if args['TEST_TARGET_FILE']:
-        top_hypotheses = [hyps[0] for hyps in hypotheses]
-        bleu_score = compute_corpus_level_bleu_score(test_data_tgt, top_hypotheses)
-        print(f'Corpus BLEU: {bleu_score}', file=sys.stderr)
+        hypotheses = beam_search(net, test_data_src, vocab)
 
-    with open(args['OUTPUT_FILE'], 'w') as f:
-        for src_sent, hyps in zip(test_data_src, hypotheses):
-            top_hyp = hyps[0]
-            hyp_sent = ' '.join(top_hyp.value)
-            f.write(hyp_sent + '\n')
+        top_hypotheses = [''.join([vocab.tgt.get_word(char.item()) for char in hyps[0].value[1:-1]]) for hyps in hypotheses]
+
+        if args['TEST_TARGET_FILE']:
+            test_data_tgt = read_corpus(args['TEST_TARGET_FILE'], source='tgt')
+            bleu_score = compute_corpus_level_bleu_score(test_data_tgt, top_hypotheses)
+            print(f'Corpus BLEU: {bleu_score}', file=sys.stderr)
+
+            with open('full_' + args['OUTPUT_FILE'], 'w') as f:
+                for src_sent, tgt_sent, hyp_sent in zip(test_data_src, test_data_tgt, top_hypotheses):
+                    f.write(''.join(src_sent) + '\n')
+                    f.write(''.join(tgt_sent[1:-1]) + '\n')
+                    f.write(hyp_sent + '\n\n')
+
+        with open(args['OUTPUT_FILE'], 'w') as f:
+            for hyp_sent in top_hypotheses:
+                f.write(hyp_sent + '\n')
 
 
 def main():
@@ -214,6 +224,14 @@ def main():
     if args['train']:
         train(args)
     elif args['decode']:
+        args = {'--vocab': 'data/char_vocab.bin', '--embed-size': 256, '--hidden-size': 512, '--dropout': 0.1, '--max-decoding-time-step': 200,
+                'MODEL_PATH': 'work_dir/1569620668/model/epoch_22_trainLoss_69.65_TF_0.80',
+                # 'MODEL_PATH': 'work_dir/model/epoch_22_trainLoss_69.65_TF_0.80',
+                'TEST_SOURCE_FILE': 'data/test.de-en.de',
+                'TEST_TARGET_FILE': 'data/test.de-en.en',
+                'OUTPUT_FILE': 'decode.txt',
+                '--cuda': False,
+                }
         test(args)
     else:
         raise RuntimeError(f'invalid mode')
